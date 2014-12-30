@@ -1,24 +1,39 @@
-all: server client
+TOPDIR = $(CURDIR)
+
+all: rctlser rctlcli
 
 CC?=gcc
 CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable
-CFLAGS+=-I. 
+CFLAGS+=-I. -I$(TOPDIR)/include
 CFLAGS+=-g -DDEBUG
-LIB+=-lpthread
+CFLAGS+=-D_GNU_SOURCE
+LDFLAGS+=-lpthread -lreadline
 STRIP=strip
+export CC CFLAGS LDFLAGS STRIP
 
-SERSRC=common.c ser.c
+LIBDIR=$(TOPDIR)/lib
+LIB=$(LIBDIR)/rctl.a
+export LIB
+$(LIB):
+	@$(MAKE) -C $(LIBDIR)
 
-server: $(SERSRC)
-	$(CC) $(CFLAGS) -DSERVER $(LIB) $^ -o $@
+SERDIR=$(TOPDIR)/server
+rctlser:$(LIB)
+	@$(MAKE) -C $(SERDIR)
 
-CLISRC=common.c rctl.c cli.c
-
-client: $(CLISRC)
-	$(CC) $(CFLAGS) -DCLIENT $^ -o $@
+CLIDIR=$(TOPDIR)/client
+rctlcli:$(LIB)
+	@$(MAKE) -C $(CLIDIR)
 
 clean:
-	-@rm -rf client server *.o *.d
+	-@rm -rf `find . -name "*.o"`
+	-@rm -rf `find . -name "*.a"` 
+	-@rm -rf $(CLIDIR)/rctlcli $(SERDIR)/rctlser
+
+tags: FORCE
+	@find  . -name "*.h" -o -name "*.c" -o -name "*.s" > cscope.files
+	@cscope -bkq -i cscope.files
+	@ctags -L cscope.files
 
 .PHONY: clean
 

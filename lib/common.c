@@ -59,18 +59,16 @@ int Listen(int socket, int backlog)
 	return 0;
 }
 
-int Select(int nfds, fd_set *readfds,
-	fd_set *writefds, fd_set * errorfds,
+int Select(int nfds, fd_set * readfds,
+	fd_set * writefds, fd_set * errorfds,
 	struct timeval * timeout)
 {
 	int ret;
-	ret = select(nfds, readfds, writefds, 
-		errorfds, timeout);
-	if(ret < 0) {
-		fprintf(stderr, "Select socket failed: %s\n", 
-			strerror(errno));
-		return -1;
-	}
+	do {
+		ret = select(nfds, readfds, writefds, errorfds, 
+			timeout);
+	} while(ret < 0 && errno == EINTR);
+
 	return ret;
 }
 
@@ -89,12 +87,22 @@ int Accept(int socket, struct sockaddr * address,
 
 ssize_t Recv(int socket, void *buffer, size_t length, int flags)
 {
-	ssize_t ret = recv(socket, buffer, length, flags);
-	if(ret < 0) {
-		fprintf(stderr, "Recv failed: %s\n", 
-			strerror(errno));
-		return -1;
-	}
+	ssize_t ret;
+	do {
+		ret = recv(socket, buffer, length, flags);
+	} while(ret < 0 && errno == EINTR);
+
+	return ret;
+}
+
+ssize_t Send(int socket, const void *buffer, 
+	size_t length, int flags)
+{
+	int ret;
+	do {
+		ret = send(socket, buffer, length, flags);
+	} while(ret < 0 && errno == EINTR);
+
 	return ret;
 }
 
@@ -109,7 +117,6 @@ void *Malloc(size_t size)
 	return ptr;
 }
 
-#ifdef SERVER
 int Pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	void *(*start_routine) (void *), void *arg)
 {
@@ -119,4 +126,14 @@ int Pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			strerror(errno));
 	return ret;
 }
-#endif
+
+int Setsockopt(int socket, int level, int option_name,
+	const void *option_value, socklen_t option_len)
+{
+	int ret = setsockopt(socket, level, 
+		option_name, option_value, option_len);
+	if(ret < 0)
+		fprintf(stderr, "Setsocket failed: %s\n", 
+			strerror(errno));
+	return ret;
+}

@@ -19,20 +19,18 @@
 #define __RCTL_H__
 #include <stdint.h>
 
-#ifdef CLIENT
 static char serverip[][50] = {
+	"127.0.0.1",
 	"shanliren.net",
 };
 #define TOTSER 	(sizeof(serverip) / sizeof(serverip[0]))
-#endif
 
 static uint16_t port[] = {
 	6000,
 	7000,
 	8000,
 };
-
-void rctl(char *devid);
 #define TOTPRT (sizeof(port) / sizeof(port[0]))
 
+void rctl(char *devid);
 #endif /* __RCTL_H__ */
