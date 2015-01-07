@@ -17,7 +17,7 @@
  */
 #ifndef __LNET_H__
 #define __LNET_H__
-
+#include <sys/socket.h>
 #include <pthread.h>
 #define CMDLEN (2048)
 #define BUFLEN (2048)
