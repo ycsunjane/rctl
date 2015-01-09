@@ -17,6 +17,7 @@
  */
 #ifndef __RCTL_H__
 #define __RCTL_H__
+#include <unistd.h>
 #include <stdint.h>
 
 static char serverip[][50] = {

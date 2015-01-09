@@ -18,20 +18,20 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>
+#include <pthread.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
 #include "rctl.h"
 #include "common.h"
 #include "list.h"
-#include "ser.h"
 #include "serd.h"
 #include "log.h"
 
@@ -39,61 +39,79 @@ void cmd_listclass()
 {
 	struct cliclass_t *ptr;
 	printf("Class list:\n");
+	
+	pthread_mutex_lock(&classlock);
 	list_for_each_entry(ptr, &classhead, classlist) {
 		printf("%s\n", ptr->cliclass);
 	}
+	pthread_mutex_unlock(&classlock);
 }
 
 void cmd_listcli()
 {
 	struct cliclass_t *class;
 	struct client_t *cli;
+	pthread_mutex_lock(&classlock);
 	list_for_each_entry(class, &classhead, classlist) {
 		printf("%s\n", class->cliclass);
-		list_for_each_entry(cli, &class->clilist, classlist) {
+
+		pthread_mutex_lock(&class->clilock);
+		list_for_each_entry(cli, &class->clilist, 
+			classlist) {
 			printf("\t%d : %s\n", 
-				cli->sock, inet_ntoa(cli->cliaddr.sin_addr));
+				cli->sock, 
+				inet_ntoa(cli->cliaddr.sin_addr));
 		}
+		pthread_mutex_unlock(&class->clilock);
 	}
+	pthread_mutex_unlock(&classlock);
 }
 
 void cmd_prcmd(struct client_t *cli, char *cmd)
 {
-	printf("\n------------- %s -------------\n > %s\n", 
-		inet_ntoa(cli->cliaddr.sin_addr),
-		cmd);
 }
 
-void cmd_prret(struct client_t *cli, char *ret)
+static void fllush_stdin()
 {
-	printf("%s", ret);
-	printf("\n-----------------------------------\n");
+	int c;
+	while ( (c = getchar()) != '\n' && c != EOF ) { }
 }
 
 static char cmd[BUFLEN];
-static char buf[BUFLEN];
 void cmd_sendcmd()
 {
 	printf("Input class:\n");
 	char classname[DEVID_LEN];
 	scanf("%s", classname);
+	fllush_stdin();
 
 	printf("Input cmd:\n");
-	scanf("%s", cmd);
+	fgets(cmd, BUFLEN, stdin);
+	cmd[strlen(cmd) - 1] = 0;
 
 	struct cliclass_t *class;
 	struct client_t *cli;
+	pthread_mutex_lock(&classlock);
 	list_for_each_entry(class, &classhead, classlist) {
 		if(strcmp(classname, class->cliclass))
 			continue;
 
+		pthread_mutex_lock(&class->clilock);
 		list_for_each_entry(cli, &class->clilist, classlist) {
+			if(cli->outfile) {
+				time_t now = time(NULL);
+				char *nowstr = ctime(&now);
+				nowstr[strlen(nowstr) - 1] = 0;
+				fprintf(cli->outfile, "[%s] '%s'\n", 
+					nowstr, cmd);
+				fflush(cli->outfile);
+			}
 			Send(cli->sock, cmd, strlen(cmd), 0);
 			cmd_prcmd(cli, cmd);
-			Recv(cli->sock, buf, BUFLEN, 0);
-			cmd_prret(cli, buf);
 		}
+		pthread_mutex_unlock(&class->clilock);
 	}
+	pthread_mutex_unlock(&classlock);
 }
 
 void bash(int fd)
@@ -175,11 +193,7 @@ int command()
 int debug = 1;
 int main()
 {
-	int ret;
-	pthread_t thread;
-	ret = Pthread_create(&thread, NULL, rctlreg, NULL);
-	if(ret) exit(-1);
-
+	serd_init();
 	command();
 	return 0;
 }

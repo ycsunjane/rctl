@@ -35,7 +35,7 @@ tags: FORCE
 	@cscope -bkq -i cscope.files
 	@ctags -L cscope.files
 
-.PHONY: clean
+.PHONY: clean FORCE
 
 -include $(SRC:.c=.d)
 

