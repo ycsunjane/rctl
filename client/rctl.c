@@ -36,6 +36,7 @@
 #include "common.h"
 #include "rctl.h"
 #include "log.h"
+#include "ssltcp.h"
 
 int debug = 1;
 static char cmd[CMDLEN];
@@ -269,6 +270,12 @@ static void bash(int fd)
 	}
 }
 
+static void ssl_free(SSL *ssl)
+{
+	ssltcp_shutdown(ssl);
+	ssltcp_free(ssl);
+}
+
 void rctl(char *devid)
 {
 	pid_t pid;
@@ -282,23 +289,39 @@ void rctl(char *devid)
 	}
 
 	/* child */
-	int fd = 0;
+	ssltcp_init(0);
 
+	int fd = 0;
 reconnect:
 	close(fd);
 	fd = r_connect();
 	if(fd == -1) goto reconnect;
 
+	SSL *ssl = ssltcp_ssl(fd);
+	if(!ssl) goto reconnect;
+
+	if(ssltcp_connect(ssl) < 0) {
+		ssltcp_free(ssl);
+		goto reconnect;
+	}
+
 	int ret;
-	ret = Send(fd, devid, strlen(devid), 0);
-	if(ret < 0) goto reconnect;
+	ret = ssltcp_write(ssl, devid, strlen(devid));
+	if(ret <= 0) {
+		ssl_free(ssl);
+		goto reconnect;
+	}
 	sys_debug("Send class: %s\n", devid);
 
 	while(1) {
 		/* max command len should less than
 		 * CMDLEN, so ret always complete */
-		ret = Recv(fd, cmd, CMDLEN, 0);
-		if(ret <= 0) goto reconnect;
+		ret = ssltcp_read(ssl, cmd, CMDLEN);
+		if(ret <= 0) {
+			ssl_free(ssl);
+			goto reconnect;
+		}
+		cmd[ret] = 0;
 		sys_debug("recv command: %s\n", cmd);
 
 		strncat(cmd, " 2>&1", CMDLEN - strlen(cmd));
@@ -314,8 +337,11 @@ reconnect:
 		fp = popen(cmd, "r"); 
 		if(!fp) {
 			sprintf(buf, "exec fail: %s\n", cmd);
-			ret = Send(fd, buf, strlen(buf) + 1, 0);
-			if(ret < 0) goto reconnect;
+			ret = ssltcp_write(ssl, buf, strlen(buf));
+			if(ret <= 0) {
+				ssl_free(ssl);
+				goto reconnect;
+			}
 		} else {
 			int isfirst = 1;
 			do {
@@ -323,19 +349,21 @@ reconnect:
 				/* some command have no output */
 				if(isfirst && size == 0) {
 					sprintf(buf, "exec success: %s\n", cmd);
-					ret = Send(fd, buf, strlen(buf) + 1, 0);
-					if(ret < 0) {
-						goto reconnect;
+					ret = ssltcp_write(ssl, buf, strlen(buf));
+					if(ret <= 0) {
+						ssl_free(ssl);
 						pclose(fp);
+						goto reconnect;
 					}
 				}
 
 				isfirst = 0;
 				if(size > 0) {
-					ret = Send(fd, buf, size, 0);
-					if(ret < 0) {
-						goto reconnect;
+					ret = ssltcp_write(ssl, buf, size);
+					if(ret <= 0) {
+						ssl_free(ssl);
 						pclose(fp);
+						goto reconnect;
 					}
 				}
 			} while(size == BUFLEN);

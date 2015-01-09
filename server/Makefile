@@ -4,7 +4,7 @@ FILE=$(wildcard *.c)
 OBJ = $(FILE:.c=.o)
 
 rctlser:$(OBJ) $(LIB)
-	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 %.o:%.c
 	$(CC) $(CFLAGS) -c $^ -o $@

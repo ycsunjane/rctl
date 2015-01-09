@@ -32,6 +32,7 @@
 #include "log.h"
 #include "rctl.h"
 #include "serd.h"
+#include "ssltcp.h"
 
 static char recvbuf[BUFLEN];
 static int ep;
@@ -98,19 +99,31 @@ end:
 	free(cli);
 }
 
+void cli_free(struct client_t *cli)
+{
+	ssltcp_shutdown(cli->ssl);
+	ssltcp_free(cli->ssl);
+	dequeue_cli(cli);
+	epoll_delete(cli);
+}
+
 static int epoll_recv(struct client_t *cli)
 {
+	assert(cli->ssl);
+
 	ssize_t num;
-	num = Recv(cli->sock, cli->recvbuf, BUFLEN - 1, 0);
-	if(num < 0) {
-		dequeue_cli(cli);
+	sys_debug("ssl: %p\n", cli->ssl);
+	/* BUFLEN-1, ensure recvbuf[num] = 0 */
+	num = ssltcp_read(cli->ssl, cli->recvbuf, BUFLEN - 1);
+	if(num <= 0) {
+		cli_free(cli);
 		return -1;
 	}
-
 	cli->recvbuf[num] = 0;
+
 	if(cli->outfd >= 0)
 		write(cli->outfd, cli->recvbuf, num);
-	
+
 	return 0;
 }
 
@@ -134,17 +147,17 @@ static void *epoll_loop(void *arg)
 		int i;
 		for(i = 0; i < num; i++) {
 			if(ev[i].events & EPOLLRDHUP) {
-				dequeue_cli(ev[i].data.ptr);
-				epoll_delete(ev[i].data.ptr);
+				sys_debug("epoll close\n");
+				cli_free(ev[i].data.ptr);
 				/* socket colse will set 
 				 * EPOLLRDHUP and EPOLLIN */
 				break;
 			} else if(ev[i].events & EPOLLIN) {
-				if(epoll_recv(ev[i].data.ptr) < 0)
-					epoll_delete(ev[i].data.ptr);
+				sys_debug("epoll recv\n");
+				epoll_recv(ev[i].data.ptr);
 			} else {
-				dequeue_cli(ev[i].data.ptr);
-				epoll_delete(ev[i].data.ptr);
+				sys_debug("epoll error\n");
+				cli_free(ev[i].data.ptr);
 			}
 		}
 	}
@@ -217,16 +230,26 @@ static void accept_newcli(int sock)
 	socklen_t socklen = sizeof(struct sockaddr_in);
 	int fd = Accept(sock, 
 		(struct sockaddr *)&new->cliaddr, &socklen);
-	if(fd < 0) goto clean;
+	if(fd < 0) goto clean1;
 
 	new->sock = fd;
-	ssize_t nread = Recv(fd, recvbuf, BUFLEN, 0);
-	if(nread <= 0) goto clean;
+
+	if( !(new->ssl = ssltcp_ssl(fd)) )
+		goto clean2;
+
+	if( !ssltcp_accept(new->ssl) )
+		goto clean2;
+	sys_debug("ssl accept success: %p\n", new->ssl);
+
+	ssize_t nread = ssltcp_read(new->ssl, 
+		recvbuf, BUFLEN);
+	if(nread <= 0) goto clean3;
+
 	strncpy(new->cliclass, recvbuf, DEVID_LEN);
 
 	struct cliclass_t *class;
 	if(!(class = newclass(new->cliclass))) 
-		goto clean;
+		goto clean3;
 	new->mclass = class;
 	class->total++;
 	open_outfd(new);
@@ -236,7 +259,12 @@ static void accept_newcli(int sock)
 	epoll_insert(new);
 	goto end;
 
-clean:
+clean3:
+	ssltcp_shutdown(new->ssl);
+	ssltcp_free(new->ssl);
+clean2:
+	close(fd);
+clean1:
 	free(new);
 end:
 	return;
@@ -302,6 +330,7 @@ void *rctlreg(void * arg)
 void serd_init()
 {
 	epoll_init();
+	ssltcp_init(1);
 
 	int ret;
 	pthread_t thread;

@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Example script
+# Copyright (C) 2007 OpenWrt.org
+ 
+START=99
+STOP=99
+ 
+start() {        
+	service_start /usr/sbin/rctlcli
+}                 
+ 
+stop() {          
+	service_stop /usr/sbin/rctlcli
+}
+
+boot() {
+	cd /etc/ssl/certs
+	HASH=`openssl x509 -hash -noout -in wirelesser_ca.crt`.0
+	ln -s wirelesser_ca.crt $HASH
+	service_start /usr/sbin/rctlcli
+}

@@ -7,7 +7,7 @@ CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable
 CFLAGS+=-I. -I$(TOPDIR)/include
 CFLAGS+=-g -DDEBUG
 CFLAGS+=-D_GNU_SOURCE
-LDFLAGS+=-lpthread -lreadline
+LDFLAGS+=-lpthread -lreadline -lssl -lcrypto
 STRIP=strip
 export CC CFLAGS LDFLAGS STRIP
 
@@ -29,6 +29,14 @@ clean:
 	-@rm -rf `find . -name "*.o"`
 	-@rm -rf `find . -name "*.a"` 
 	-@rm -rf $(CLIDIR)/rctlcli $(SERDIR)/rctlser
+
+install_server:
+	-@mkdir -p /etc/rctl
+	-@cp rctl_cert.pem rctl_priv.pem /etc/rctl
+
+install_client:
+	-@mkdir -p /etc/ssl/certs/
+	-@cp wirelesser_ca.crt /etc/ssl/certs/
 
 tags: FORCE
 	@find  . -name "*.h" -o -name "*.c" -o -name "*.s" > cscope.files

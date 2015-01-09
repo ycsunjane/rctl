@@ -91,6 +91,7 @@ void cmd_sendcmd()
 
 	struct cliclass_t *class;
 	struct client_t *cli;
+repeat:
 	pthread_mutex_lock(&classlock);
 	list_for_each_entry(class, &classhead, classlist) {
 		if(strcmp(classname, class->cliclass))
@@ -106,12 +107,22 @@ void cmd_sendcmd()
 					nowstr, cmd);
 				fflush(cli->outfile);
 			}
-			Send(cli->sock, cmd, strlen(cmd), 0);
+			/* XXX: we are in lock */
+			if(ssltcp_write(cli->ssl, cmd, strlen(cmd)) <= 0) {
+				pthread_mutex_unlock(&class->clilock);
+				pthread_mutex_unlock(&classlock);
+				goto free;
+			}
 			cmd_prcmd(cli, cmd);
 		}
 		pthread_mutex_unlock(&class->clilock);
 	}
 	pthread_mutex_unlock(&classlock);
+	return;
+
+free:
+	cli_free(cli);
+	goto repeat;
 }
 
 void bash(int fd)
@@ -190,7 +201,7 @@ int command()
 	}
 }
 
-int debug = 1;
+int debug = 0;
 int main()
 {
 	serd_init();

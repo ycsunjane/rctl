@@ -23,6 +23,7 @@
 #include <arpa/inet.h>
 #include "common.h"
 #include "list.h"
+#include "ssltcp.h"
 
 /* epoll parallel number */
 #define PARA_NUM 	(10)
@@ -39,6 +40,8 @@ struct client_t {
 	char 	cliclass[DEVID_LEN];
 	struct 	sockaddr_in cliaddr;
 	int 	sock;
+	SSL * 	ssl;
+
 
 	char 	recvbuf[BUFLEN];
 	int 	outfd;
@@ -55,4 +58,5 @@ extern pthread_mutex_t classlock;
 extern struct list_head classhead;
 
 void serd_init();
+void cli_free(struct client_t *cli);
 #endif /* __SERD_H__ */
