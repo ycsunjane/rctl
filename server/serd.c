@@ -37,10 +37,10 @@
 static char recvbuf[BUFLEN];
 static int ep;
 
-pthread_mutex_t totlock = PTHREAD_MUTEX_INITIALIZER;
-LIST_HEAD(tothead);
 pthread_mutex_t classlock = PTHREAD_MUTEX_INITIALIZER;
 LIST_HEAD(classhead);
+pthread_mutex_t totlock = PTHREAD_MUTEX_INITIALIZER;
+LIST_HEAD(tothead);
 
 static void epoll_insert(struct client_t *client)
 {
@@ -66,45 +66,39 @@ static void epoll_delete(struct client_t *client)
 	}
 }
 
-static void dequeue_class(struct cliclass_t *cliclass)
+void getclass(struct cliclass_t *class)
 {
-	pthread_mutex_lock(&classlock);
-	list_del(&cliclass->classlist);
-	pthread_mutex_unlock(&classlock);
-	free(cliclass);
+	class->count++;
 }
 
-static void dequeue_cli(struct client_t *cli)
+void putclass(struct cliclass_t *class)
 {
-	close(cli->sock);
-	pthread_mutex_lock(&totlock);
-	list_del(&cli->totlist);
-	pthread_mutex_unlock(&totlock);
-
-	if(cli->mclass->total == 1) {
-		pthread_mutex_lock(&cli->mclass->clilock);
-		list_del(&cli->classlist);
-		pthread_mutex_unlock(&cli->mclass->clilock);
-
-		dequeue_class(cli->mclass);
-		goto end;
-	} else {
-		cli->mclass->total--;
-		pthread_mutex_lock(&cli->mclass->clilock);
-		list_del(&cli->classlist);
-		pthread_mutex_unlock(&cli->mclass->clilock);
-		goto end;
+	if(!(--class->count)) {
+		list_del(&class->classlist);
+		pthread_mutex_destroy(&class->lock);
+		free(class);
 	}
-end:
-	free(cli);
 }
 
 void cli_free(struct client_t *cli)
 {
+	pthread_mutex_lock(&classlock);
+	pthread_mutex_lock(&cli->class->lock);
+	pthread_mutex_lock(&totlock);
+	list_del(&cli->totlist);
+	list_del(&cli->classlist);
+	epoll_delete(cli);
+	putclass(cli->class);
+	pthread_mutex_unlock(&totlock);
+	pthread_mutex_unlock(&cli->class->lock);
+	pthread_mutex_unlock(&classlock);
+
 	ssltcp_shutdown(cli->ssl);
 	ssltcp_free(cli->ssl);
-	dequeue_cli(cli);
-	epoll_delete(cli);
+	close(cli->sock);
+	close(cli->outfd);
+	fclose(cli->outfile);
+	free(cli);
 }
 
 static int epoll_recv(struct client_t *cli)
@@ -146,18 +140,16 @@ static void *epoll_loop(void *arg)
 
 		int i;
 		for(i = 0; i < num; i++) {
-			if(ev[i].events & EPOLLRDHUP) {
+			if(ev[i].events & EPOLLRDHUP ||
+				!(ev[i].events & EPOLLIN)) {
 				sys_debug("epoll close\n");
 				cli_free(ev[i].data.ptr);
 				/* socket colse will set 
 				 * EPOLLRDHUP and EPOLLIN */
 				break;
-			} else if(ev[i].events & EPOLLIN) {
+			} else {
 				sys_debug("epoll recv\n");
 				epoll_recv(ev[i].data.ptr);
-			} else {
-				sys_debug("epoll error\n");
-				cli_free(ev[i].data.ptr);
 			}
 		}
 	}
@@ -179,28 +171,38 @@ static void epoll_init()
 	if(ret) exit(-1);
 }
 
-struct cliclass_t *newclass(char *class)
+struct cliclass_t *newclass(char *classname)
 {
 	struct cliclass_t *ptr;
+	pthread_mutex_lock(&classlock);
 	list_for_each_entry(ptr, &classhead, classlist) {
-		if(!strcmp(class, ptr->cliclass))
+		if(!strcmp(classname, ptr->cliclass)) {
+			pthread_mutex_lock(&ptr->lock);
+			getclass(ptr);
+			pthread_mutex_unlock(&ptr->lock);
+			pthread_mutex_unlock(&classlock);
 			return ptr;
+		}
 	}
 
 	struct cliclass_t *new =
 		Malloc(sizeof(struct cliclass_t));
-	memset(new, 0, sizeof(struct cliclass_t));
-	if(new) {
-		strncpy(new->cliclass, class, DEVID_LEN);
-		INIT_LIST_HEAD(&new->classlist);
-		INIT_LIST_HEAD(&new->clilist);
-		pthread_mutex_init(&new->clilock, NULL);
-
-		pthread_mutex_lock(&classlock);
-		list_add_tail(&new->classlist, 
-			&classhead);
+	if(!new) {
 		pthread_mutex_unlock(&classlock);
+		return NULL;
 	}
+
+	memset(new, 0, sizeof(struct cliclass_t));
+	strncpy(new->cliclass, classname, DEVID_LEN);
+	INIT_LIST_HEAD(&new->classlist);
+	INIT_LIST_HEAD(&new->clilist);
+	pthread_mutex_init(&new->lock, NULL);
+	pthread_mutex_lock(&new->lock);
+	getclass(new);
+	pthread_mutex_unlock(&new->lock);
+	list_add_tail(&new->classlist, &classhead);
+
+	pthread_mutex_unlock(&classlock);
 	return new;
 }
 
@@ -208,7 +210,7 @@ static void open_outfd(struct client_t *cli)
 {
 	char path[PATH_MAX];
 	snprintf(path, PATH_MAX, "/tmp/%s_%s",
-		cli->mclass->cliclass,
+		cli->class->cliclass,
 		inet_ntoa(cli->cliaddr.sin_addr));
 
 	cli->outfile = fopen(path, "a+");
@@ -224,7 +226,8 @@ static void open_outfd(struct client_t *cli)
 
 static void accept_newcli(int sock)
 {
-	struct client_t *new = Malloc(sizeof(struct client_t));
+	struct client_t *new;
+	new = Malloc(sizeof(struct client_t));
 	if(!new) goto end;
 
 	socklen_t socklen = sizeof(struct sockaddr_in);
@@ -233,10 +236,8 @@ static void accept_newcli(int sock)
 	if(fd < 0) goto clean1;
 
 	new->sock = fd;
-
 	if( !(new->ssl = ssltcp_ssl(fd)) )
 		goto clean2;
-
 	if( !ssltcp_accept(new->ssl) )
 		goto clean2;
 	sys_debug("ssl accept success: %p\n", new->ssl);
@@ -245,18 +246,22 @@ static void accept_newcli(int sock)
 		recvbuf, BUFLEN);
 	if(nread <= 0) goto clean3;
 
-	strncpy(new->cliclass, recvbuf, DEVID_LEN);
+	char *classname = recvbuf;
+	classname[DEVID_LEN - 1] = 0;
 
 	struct cliclass_t *class;
-	if(!(class = newclass(new->cliclass))) 
+	if(!(class = newclass(classname))) 
 		goto clean3;
-	new->mclass = class;
-	class->total++;
+	new->class = class;
 	open_outfd(new);
 
+	pthread_mutex_lock(&class->lock);
+	pthread_mutex_lock(&totlock);
 	list_add_tail(&new->totlist, &tothead);
 	list_add_tail(&new->classlist, &class->clilist);
 	epoll_insert(new);
+	pthread_mutex_unlock(&totlock);
+	pthread_mutex_unlock(&class->lock);
 	goto end;
 
 clean3:

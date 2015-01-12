@@ -55,20 +55,16 @@ void cmd_listcli()
 	list_for_each_entry(class, &classhead, classlist) {
 		printf("%s\n", class->cliclass);
 
-		pthread_mutex_lock(&class->clilock);
+		pthread_mutex_lock(&class->lock);
 		list_for_each_entry(cli, &class->clilist, 
 			classlist) {
 			printf("\t%d : %s\n", 
 				cli->sock, 
 				inet_ntoa(cli->cliaddr.sin_addr));
 		}
-		pthread_mutex_unlock(&class->clilock);
+		pthread_mutex_unlock(&class->lock);
 	}
 	pthread_mutex_unlock(&classlock);
-}
-
-void cmd_prcmd(struct client_t *cli, char *cmd)
-{
 }
 
 static void fllush_stdin()
@@ -91,13 +87,12 @@ void cmd_sendcmd()
 
 	struct cliclass_t *class;
 	struct client_t *cli;
-repeat:
 	pthread_mutex_lock(&classlock);
 	list_for_each_entry(class, &classhead, classlist) {
 		if(strcmp(classname, class->cliclass))
 			continue;
 
-		pthread_mutex_lock(&class->clilock);
+		pthread_mutex_lock(&class->lock);
 		list_for_each_entry(cli, &class->clilist, classlist) {
 			if(cli->outfile) {
 				time_t now = time(NULL);
@@ -107,22 +102,14 @@ repeat:
 					nowstr, cmd);
 				fflush(cli->outfile);
 			}
-			/* XXX: we are in lock */
-			if(ssltcp_write(cli->ssl, cmd, strlen(cmd)) <= 0) {
-				pthread_mutex_unlock(&class->clilock);
-				pthread_mutex_unlock(&classlock);
-				goto free;
-			}
-			cmd_prcmd(cli, cmd);
+			if(ssltcp_write(cli->ssl, cmd, 
+					strlen(cmd)) <= 0)
+				continue;
 		}
-		pthread_mutex_unlock(&class->clilock);
+		pthread_mutex_unlock(&class->lock);
 	}
 	pthread_mutex_unlock(&classlock);
 	return;
-
-free:
-	cli_free(cli);
-	goto repeat;
 }
 
 void bash(int fd)

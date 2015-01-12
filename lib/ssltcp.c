@@ -225,7 +225,7 @@ repeat:
 		goto repeat;
 	} else if(ret < 0) {
 		ret = SSL_get_error(ssl, ret);
-		sys_err("SSL_write failed: %d\n", ret);
+		sys_warn("SSL_shutdown failed: %d\n", ret);
 		return -1;
 	}
 	return 0;

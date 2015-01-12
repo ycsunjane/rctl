@@ -30,18 +30,20 @@
 #define DEVID_LEN 	(33)
 struct cliclass_t {
 	char 	cliclass[DEVID_LEN];
-	int 	total;
+
+	int 	count;
+	pthread_mutex_t 	lock;
+
 	struct list_head 	classlist;
-	pthread_mutex_t 	clilock;
 	struct list_head 	clilist;
 };
 
 struct client_t {
-	char 	cliclass[DEVID_LEN];
+	struct cliclass_t *class;
+
 	struct 	sockaddr_in cliaddr;
 	int 	sock;
 	SSL * 	ssl;
-
 
 	char 	recvbuf[BUFLEN];
 	int 	outfd;
@@ -49,13 +51,12 @@ struct client_t {
 
 	struct list_head totlist;
 	struct list_head classlist;
-	struct cliclass_t *mclass;
 };
 
-extern pthread_mutex_t totlock;
-extern struct list_head tothead;
 extern pthread_mutex_t classlock;
 extern struct list_head classhead;
+extern pthread_mutex_t totlock;
+extern struct list_head tothead;
 
 void serd_init();
 void cli_free(struct client_t *cli);
