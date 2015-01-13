@@ -121,17 +121,32 @@ void bashto(in_addr_t addr, SSL *oldssl)
 	}
 }
 
+void macstr_to_mac(char *macstr, char *mac)
+{
+	int i;
+	char *next;
+	for(i = 0; i < ETH_ALEN; i++) {
+		mac[i] = (unsigned char)
+			strtol(macstr, &next, 16);
+		if(*next == '\0')
+			break;
+		macstr = next + 1;
+	}
+}
+
 void cmd_bashto()
 {
-	printf("Input destip:\n");
-	char destip[16];
-	scanf("%s", destip);
+	printf("Input mac:\n");
+	char macstr[MACSTR];
+	scanf("%s", macstr);
+	
+	char mac[ETH_ALEN];
+	macstr_to_mac(macstr, mac);
 
-	in_addr_t addr = inet_addr(destip);
 	struct client_t *cli;
 	pthread_mutex_lock(&totlock);
 	list_for_each_entry(cli, &tothead, totlist) {
-		if(cli->cliaddr.sin_addr.s_addr != addr)
+		if(memcmp(mac, cli->mac, ETH_ALEN))
 			continue;
 		pthread_mutex_unlock(&totlock);
 		bashto(cli->cliaddr.sin_addr.s_addr, cli->ssl);		

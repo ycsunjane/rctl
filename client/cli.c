@@ -23,7 +23,7 @@
 
 int main()
 {
-	rctl("sunjianxi");
+	rctl("nip", "enp3s0");
 	pause();
 	return 0;
 }

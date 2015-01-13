@@ -23,7 +23,6 @@
 #include "list.h"
 #include "config.h"
 
-#define DEVID_LEN 	(33)
 struct cliclass_t {
 	char 	cliclass[DEVID_LEN];
 
@@ -41,6 +40,7 @@ struct client_t {
 	int 	sock;
 	SSL * 	ssl;
 
+	unsigned char 	mac[ETH_ALEN];
 	char 	recvbuf[BUFLEN];
 	int 	outfd;
 	FILE 	*outfile;

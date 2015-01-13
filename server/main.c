@@ -52,8 +52,19 @@ void cmd_listclass()
 	pthread_mutex_unlock(&classlock);
 }
 
+char *getmacstr(unsigned char *mac)
+{
+	char *macstr = Malloc(17);
+	if(!macstr) return NULL;
+	sprintf(macstr, "%02x:%02x:%02x:%02x:%02x:%02x",
+		(mac)[0],(mac)[1],(mac)[2],
+		(mac)[3],(mac)[4],(mac)[5]); 		
+	return macstr;
+}
+
 void cmd_listcli()
 {
+	char *macstr;
 	struct cliclass_t *class;
 	struct client_t *cli;
 	pthread_mutex_lock(&classlock);
@@ -63,9 +74,12 @@ void cmd_listcli()
 		pthread_mutex_lock(&class->lock);
 		list_for_each_entry(cli, &class->clilist, 
 			classlist) {
-			printf("\t%d : %s\n", 
-				cli->sock, 
+			macstr = getmacstr(cli->mac);
+			printf("\t%d : %s %s\n", 
+				cli->sock, macstr,
 				inet_ntoa(cli->cliaddr.sin_addr));
+			if(macstr)
+				free(macstr);
 		}
 		pthread_mutex_unlock(&class->lock);
 	}

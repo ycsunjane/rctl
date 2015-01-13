@@ -18,5 +18,5 @@
 #ifndef __RCTL_H__
 #define __RCTL_H__
 
-void rctl(char *devid);
+void rctl(char *devid, char *nic);
 #endif /* __RCTL_H__ */

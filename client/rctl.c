@@ -26,6 +26,10 @@
 #include <sys/select.h>
 #include <termios.h>
 #include <signal.h>
+/* netdevice */
+#include <sys/ioctl.h>
+#include <net/if.h>
+
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -330,7 +334,28 @@ static void ssl_free(SSL *ssl)
 	ssltcp_free(ssl);
 }
 
-void rctl(char *devid)
+static void getmac(unsigned char *dmac, char *nic)
+{
+	int sock;
+	sock = socket(AF_INET, SOCK_STREAM, 0);
+	if(sock < 0) {
+		sys_err("Create dllayer socket failed: %s\n", 
+			strerror(errno));
+		exit(-1);
+	}
+
+	struct ifreq req;
+	strncpy(req.ifr_name, nic, IFNAMSIZ-1);
+	if(ioctl(sock, SIOCGIFHWADDR, &req) < 0) {
+		sys_err("get mac failed: %s\n", 
+			strerror(errno));
+		exit(-1);
+	}
+	memcpy(dmac, req.ifr_hwaddr.sa_data, ETH_ALEN);
+}
+
+static struct reg_t reg;
+void rctl(char *devid, char *nic)
 {
 	pid_t pid;
 	if( (pid = fork()) < 0) {
@@ -346,6 +371,7 @@ void rctl(char *devid)
 	int fd = 0;
 reconnect:
 	close(fd);
+	sleep(1);
 	fd = r_connect();
 	if(fd == -1) goto reconnect;
 
@@ -358,7 +384,9 @@ reconnect:
 	}
 
 	int ret;
-	ret = ssltcp_write(ssl, devid, strlen(devid));
+	strncpy(reg.class, devid, DEVID_LEN);
+	getmac(reg.mac, nic);
+	ret = ssltcp_write(ssl, (char *)&reg, sizeof(reg));
 	if(ret <= 0) {
 		ssl_free(ssl);
 		goto reconnect;

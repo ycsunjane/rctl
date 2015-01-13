@@ -23,6 +23,7 @@
 #define CA_FILE 	"/etc/ssl/certs/wirelesser_ca.crt"
 
 static char serverip[][50] = {
+	"127.0.0.1",
 	"rctl.shanliren.net",
 	"shanliren.net",
 };
@@ -37,5 +38,14 @@ static uint16_t port[] = {
 #define RCTLBASH 	"rctlbash"
 #define CMDLEN (2048)
 #define BUFLEN (2048)
+
+#define DEVID_LEN 	(33)
+#define ETH_ALEN 	(6)
+#define MACSTR 		(18)
+
+struct reg_t {
+	char  class[DEVID_LEN];
+	unsigned char  mac[ETH_ALEN];
+}__attribute__((packed));
 
 #endif /* __CONFIG_H__ */

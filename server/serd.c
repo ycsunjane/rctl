@@ -123,16 +123,19 @@ static void accept_newcli(int sock)
 	if( !ssltcp_accept(new->ssl) )
 		goto clean3;
 
-	ssize_t nread = ssltcp_read(new->ssl, recvbuf, BUFLEN);
+	struct reg_t reg;
+	ssize_t nread = ssltcp_read(new->ssl, 
+		(char *)&reg, sizeof(reg));
 	if(nread < 0) goto clean4;
 
 	struct cliclass_t *class;
-	char *classname = recvbuf;
+	char *classname = reg.class;
 	classname[DEVID_LEN - 1] = 0;
 	if(!(class = newclass(classname))) 
 		goto clean4;
 	new->class = class;
 	open_outfd(new);
+	memcpy(new->mac, reg.mac, ETH_ALEN);
 
 	pthread_mutex_lock(&class->lock);
 	pthread_mutex_lock(&totlock);
