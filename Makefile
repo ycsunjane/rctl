@@ -7,7 +7,7 @@ CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable
 CFLAGS+=-I. -I$(TOPDIR)/include
 CFLAGS+=-g -DDEBUG
 CFLAGS+=-D_GNU_SOURCE
-LDFLAGS+=-lpthread -lreadline -lssl -lcrypto
+LDFLAGS+=-lpthread -lssl -lcrypto -lreadline -lncurses
 STRIP=strip
 export CC CFLAGS LDFLAGS STRIP
 
