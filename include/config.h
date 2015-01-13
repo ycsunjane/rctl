@@ -23,15 +23,13 @@
 #define CA_FILE 	"/etc/ssl/certs/wirelesser_ca.crt"
 
 static char serverip[][50] = {
-	"127.0.0.1",
+	"rctl.shanliren.net",
 	"shanliren.net",
 };
 #define TOTSER 	(sizeof(serverip) / sizeof(serverip[0]))
 
 static uint16_t port[] = {
-	6000,
 	7000,
-	8000,
 };
 #define TOTPRT (sizeof(port) / sizeof(port[0]))
 
