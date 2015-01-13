@@ -117,10 +117,11 @@ void *Malloc(size_t size)
 	return ptr;
 }
 
-int Pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-	void *(*start_routine) (void *), void *arg)
+int Pthread_create(void *(*start_routine) (void *), void *arg)
 {
-	int ret = pthread_create(thread, attr, start_routine, arg);
+	int ret;
+	pthread_t thread;
+	ret = pthread_create(&thread, NULL, start_routine, arg);
 	if(ret)
 		fprintf(stderr, "Pthread_create failed: %s\n", 
 			strerror(errno));

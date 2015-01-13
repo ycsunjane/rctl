@@ -21,6 +21,8 @@
 #include <syslog.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <string.h>
+#include <errno.h>
 
 extern int debug;
 

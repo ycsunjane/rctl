@@ -21,6 +21,7 @@
 #include <openssl/err.h>
 
 #include "ssltcp.h"
+#include "config.h"
 #include "log.h"
 
 SSL_CTX *ctx = NULL;
@@ -28,7 +29,6 @@ SSL_CTX *ctx = NULL;
 static void 
 ssltcp_cert(SSL_CTX *ctx, const char *file, int type)
 {
-	sys_debug("ssltcp_cert\n");
 	int ret;
 	ret = SSL_CTX_use_certificate_file(ctx, file, type);
 	if(ret != 1) {
@@ -42,7 +42,6 @@ ssltcp_cert(SSL_CTX *ctx, const char *file, int type)
 static void 
 ssltcp_priv(SSL_CTX *ctx, const char *file, int type)
 {
-	sys_debug("ssltcp_priv\n");
 	int ret;
 	ret = SSL_CTX_use_PrivateKey_file(ctx, file, type);
 	if(ret != 1) {
@@ -56,7 +55,6 @@ ssltcp_priv(SSL_CTX *ctx, const char *file, int type)
 static void
 ssltcp_ca(SSL_CTX *ctx, const char *CAfile, const char *CApath)
 {
-	sys_debug("ssltcp_ca\n");
 	int ret;
 	ret = SSL_CTX_load_verify_locations(ctx, CAfile, CApath);
 	if(ret != 1) {
@@ -67,15 +65,8 @@ ssltcp_ca(SSL_CTX *ctx, const char *CAfile, const char *CApath)
 	}
 }
 
-/*
- * method: 1 server, 0 client
- * */
-#define CERT_FILE 	"/etc/rctl/rctl_cert.pem"
-#define PRIV_FILE 	"/etc/rctl/rctl_priv.pem"
-#define CA_FILE 	"/etc/ssl/certs/wirelesser_ca.crt"
 static void ssltcp_ctx(int isserver)
 {
-	sys_debug("ssltcp_ctx\n");
 	assert(ctx == NULL);
 	int ret;
 	const SSL_METHOD *method;
@@ -102,7 +93,6 @@ static void ssltcp_ctx(int isserver)
 
 void ssltcp_init(int isserver)
 {
-	sys_debug("ssltcp_init\n");
 	SSL_load_error_strings();
 	SSL_library_init();
 	ssltcp_ctx(isserver);
@@ -110,7 +100,6 @@ void ssltcp_init(int isserver)
 
 SSL *ssltcp_ssl(int fd)
 {
-	sys_debug("ssltcp_ssl\n");
 	SSL *ssl = SSL_new(ctx);
 	if(!ssl) {
 		sys_err("SSL new failed");
@@ -131,7 +120,6 @@ SSL *ssltcp_ssl(int fd)
 
 int ssltcp_accept(SSL *ssl)
 {
-	sys_debug("ssltcp_accept\n");
 	int ret = SSL_accept(ssl);
 	if(ret < 0) {
 		ret = SSL_get_error(ssl, ret);
@@ -148,7 +136,6 @@ int ssltcp_accept(SSL *ssl)
 
 int ssltcp_connect(SSL *ssl)
 {
-	sys_debug("ssltcp_connect\n");
 	int ret = SSL_connect(ssl);
 	if(ret < 0) {
 		ret = SSL_get_error(ssl, ret);
@@ -165,7 +152,6 @@ int ssltcp_connect(SSL *ssl)
 
 int ssltcp_read(SSL *ssl, char *buf, int num)
 {
-	sys_debug("ssltcp_read\n");
 	int ret;
 repeat:
 	ret = SSL_read(ssl, buf, num);
@@ -174,14 +160,14 @@ repeat:
 		if(ret == SSL_ERROR_WANT_READ ||
 			ret == SSL_ERROR_WANT_WRITE)
 			goto repeat;
-
+		if(ret == SSL_ERROR_ZERO_RETURN) {
+			sys_debug("remote ssl closed\n");
+			return -1;
+		}
 		sys_err("SSL_read failed: %d\n", ret);
 		return -1;
 	} else if(ret == 0) {
 		ret = ERR_get_error();
-		if(ret == SSL_ERROR_ZERO_RETURN)
-			return 0;
-
 		sys_err("SSL_connect failed: %s(%d)\n", 
 			ERR_error_string(ret, NULL), ret);
 		return -1;
@@ -191,7 +177,6 @@ repeat:
 
 int ssltcp_write(SSL *ssl, char *buf, int num)
 {
-	sys_debug("ssltcp_write\n");
 	int ret;
 repeat:
 	ret = SSL_write(ssl, buf, num);
@@ -200,14 +185,14 @@ repeat:
 		if(ret == SSL_ERROR_WANT_READ ||
 			ret == SSL_ERROR_WANT_WRITE)
 			goto repeat;
-
+		if(ret == SSL_ERROR_ZERO_RETURN) {
+			sys_debug("remote ssl closed\n");
+			return -1;
+		}
 		sys_err("SSL_write failed: %d\n", ret);
 		return -1;
 	} else if(ret == 0) {
 		ret = ERR_get_error();
-		if(ret == SSL_ERROR_ZERO_RETURN)
-			return 0;
-
 		sys_err("SSL_connect failed: %s(%d)\n", 
 			ERR_error_string(ret, NULL), ret);
 		return -1;
@@ -217,7 +202,6 @@ repeat:
 
 int ssltcp_shutdown(SSL *ssl)
 {
-	sys_debug("ssltcp_shutdown\n");
 	int ret;
 repeat:
 	ret = SSL_shutdown(ssl);
@@ -233,6 +217,5 @@ repeat:
 
 void ssltcp_free(SSL *ssl)
 {
-	sys_debug("ssltcp_free\n");
 	SSL_free(ssl);
 }

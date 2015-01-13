@@ -21,7 +21,6 @@
 #include <time.h>
 #include <sys/wait.h>
 #include <sys/select.h>
-#include <string.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -29,17 +28,23 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-#include "rctl.h"
+/* inet_ntoa */
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include "common.h"
 #include "list.h"
 #include "serd.h"
+#include "epoll.h"
+#include "bash.h"
 #include "log.h"
 
 void cmd_listclass()
 {
 	struct cliclass_t *ptr;
 	printf("Class list:\n");
-	
+
 	pthread_mutex_lock(&classlock);
 	list_for_each_entry(ptr, &classhead, classlist) {
 		printf("%s\n", ptr->cliclass);
@@ -112,55 +117,6 @@ void cmd_sendcmd()
 	return;
 }
 
-void bash(int fd)
-{
-	Send(fd, "bash", strlen("bash"), 0);
-	fd_set rset, bset;
-	FD_ZERO(&rset);
-	FD_SET(0, &rset);
-	FD_SET(fd, &rset);
-	int maxfd = fd + 1;
-	bset = rset;
-
-	int i, ret;
-	char *rbuf;
-	while(1) {
-		rset = bset;
-		ret = Select(maxfd, &rset, NULL, NULL, NULL);
-		if(ret < 0) continue;
-
-		if(FD_ISSET(0, &rset)) {
-			rbuf = readline("jianxi >");
-			if(Send(fd, rbuf, strlen(rbuf), 0) < 0) {
-				free(rbuf);
-				return;
-			}
-			free(rbuf);
-		}
-
-		if(FD_ISSET(fd, &rset)) {
-			//if(Recv(fd, recvbuf, BUFLEN, 0) <= 0) 
-			//	return;
-			//printf("%s", recvbuf);
-		}
-	}
-}
-
-void cmd_bashto()
-{
-	printf("Input destip:\n");
-	char destip[16];
-	scanf("%s", destip);
-
-	in_addr_t addr = inet_addr(destip);
-	struct client_t *cli;
-	list_for_each_entry(cli, &tothead, totlist) {
-		if(cli->cliaddr.sin_addr.s_addr != addr)
-			continue;
-		bash(cli->sock);		
-	}
-}
-
 int command()
 {
 	while(1) {
@@ -191,7 +147,10 @@ int command()
 int debug = 0;
 int main()
 {
+	epoll_init();
+	ssltcp_init(1);
 	serd_init();
+
 	command();
 	return 0;
 }

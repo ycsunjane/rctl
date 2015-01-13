@@ -17,16 +17,12 @@
  */
 #ifndef __SERD_H__
 #define __SERD_H__
-#include <stdio.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include "common.h"
-#include "list.h"
+#include <pthread.h>
 #include "ssltcp.h"
+#include "list.h"
+#include "config.h"
 
-/* epoll parallel number */
-#define PARA_NUM 	(10)
 #define DEVID_LEN 	(33)
 struct cliclass_t {
 	char 	cliclass[DEVID_LEN];
