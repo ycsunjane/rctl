@@ -1,9 +1,12 @@
-all:rctlcli
+all:cmdline.h rctlcli
 
-FILE=$(wildcard *.c)
+FILE=$(filter-out cmdline.c, $(wildcard *.c))
 OBJ = $(FILE:.c=.o)
 
-rctlcli:$(OBJ) $(LIB)
+cmdline.h:arg.ggo                                                              
+	gengetopt < arg.ggo                                                     
+
+rctlcli:cmdline.c $(OBJ) $(LIB)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 %.o:%.c

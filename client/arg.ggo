@@ -1,0 +1,10 @@
+package "rctlcli"
+version "0.1.0"
+
+args "--conf-parser"
+
+option "config" 	f 	"config files" 	string default="/etc/rctlcli.cfg" optional
+option "wan" 		w 	"wan" string required 
+option "class" 		c 	"class" string required 
+option "daemon" 	d 	"daemon mode" flag on 
+option "debug" 		b 	"debug" flag off

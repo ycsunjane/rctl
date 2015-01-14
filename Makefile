@@ -3,7 +3,7 @@ TOPDIR = $(CURDIR)
 all: rctlser rctlcli
 
 CC?=gcc
-CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable
+CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable -Wno-unused-but-set-variable
 CFLAGS+=-I. -I$(TOPDIR)/include
 CFLAGS+=-g -DDEBUG
 CFLAGS+=-D_GNU_SOURCE
@@ -26,6 +26,7 @@ rctlcli:$(LIB)
 	@$(MAKE) -C $(CLIDIR)
 
 clean:
+	-@rm -rf $(CLIDIR)/cmdline*
 	-@rm -rf `find . -name "*.o"`
 	-@rm -rf `find . -name "*.a"` 
 	-@rm -rf $(CLIDIR)/rctlcli $(SERDIR)/rctlser

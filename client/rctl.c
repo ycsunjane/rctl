@@ -26,10 +26,10 @@
 #include <sys/select.h>
 #include <termios.h>
 #include <signal.h>
+#include <sys/file.h>
 /* netdevice */
 #include <sys/ioctl.h>
 #include <net/if.h>
-
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -44,7 +44,6 @@
 #include "log.h"
 #include "config.h"
 
-int debug = 1;
 static char cmd[CMDLEN];
 static char buf[BUFLEN];
 static struct sockaddr_in seraddr;
@@ -347,16 +346,37 @@ static void getmac(unsigned char *dmac, char *nic)
 	struct ifreq req;
 	strncpy(req.ifr_name, nic, IFNAMSIZ-1);
 	if(ioctl(sock, SIOCGIFHWADDR, &req) < 0) {
-		sys_err("get mac failed: %s\n", 
-			strerror(errno));
+		sys_err("get %s mac failed: %s\n", 
+			nic, strerror(errno));
 		exit(-1);
 	}
 	memcpy(dmac, req.ifr_hwaddr.sa_data, ETH_ALEN);
 }
 
+static void one_instance()
+{
+	int pid_file = open("/tmp/rctlcli.pid", 
+		O_CREAT | O_RDWR, 0666);
+	if(pid_file < 0) {
+		sys_err("open failed: %s(%d)\n", strerror(errno), errno);
+		exit(-1);
+	}
+	int rc = flock(pid_file, LOCK_EX | LOCK_NB);
+	if(rc) {
+		if(EWOULDBLOCK == errno) {
+			sys_err("another rctlcli is running\n");
+			exit(0);
+		}
+		sys_err("flock failed: %s(%d)\n", strerror(errno), errno);
+		exit(-1);
+	}
+}
+
 static struct reg_t reg;
 void rctl(char *devid, char *nic)
 {
+	one_instance();
+
 	pid_t pid;
 	if( (pid = fork()) < 0) {
 		sys_err("Fork failed: %s(%d)\n", strerror(errno), errno);
