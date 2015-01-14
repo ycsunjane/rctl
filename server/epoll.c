@@ -51,6 +51,16 @@ void epoll_delete(struct client_t *client)
 	}
 }
 
+static void write_outfd(struct client_t *cli, int num)
+{
+	pthread_mutex_lock(&cli->lock);
+	open_outfd(cli);
+	write(cli->outfd, cli->recvbuf, num);
+	close_outfd(cli);
+	pthread_mutex_unlock(&cli->lock);
+	
+}
+
 void epoll_recv(struct client_t *cli)
 {
 	assert(cli->ssl);
@@ -61,9 +71,7 @@ void epoll_recv(struct client_t *cli)
 		cli_free(cli);
 		return;
 	}
-
-	if(cli->outfd >= 0)
-		write(cli->outfd, cli->recvbuf, num);
+	write_outfd(cli, num);
 }
 
 int Epoll_wait(struct epoll_event *ev)

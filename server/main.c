@@ -103,14 +103,18 @@ void cmd_sendcmd()
 
 		pthread_mutex_lock(&class->lock);
 		list_for_each_entry(cli, &class->clilist, classlist) {
-			if(cli->outfile) {
+			pthread_mutex_lock(&cli->lock);
+			if(open_outfd(cli)) {
 				time_t now = time(NULL);
 				char *nowstr = ctime(&now);
 				nowstr[strlen(nowstr) - 1] = 0;
 				fprintf(cli->outfile, "[%s] '%s'\n", 
 					nowstr, cmd);
 				fflush(cli->outfile);
+				close_outfd(cli);
 			}
+			pthread_mutex_unlock(&cli->lock);
+
 			if(ssltcp_write(cli->ssl, cmd, 
 					strlen(cmd)) <= 0)
 				continue;

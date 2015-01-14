@@ -34,6 +34,7 @@ struct cliclass_t {
 };
 
 struct client_t {
+	pthread_mutex_t lock;
 	struct cliclass_t *class;
 
 	struct 	sockaddr_in cliaddr;
@@ -56,4 +57,6 @@ extern struct list_head tothead;
 
 void serd_init();
 void cli_free(struct client_t *cli);
+void close_outfd(struct client_t *cli);
+int open_outfd(struct client_t *cli);
 #endif /* __SERD_H__ */

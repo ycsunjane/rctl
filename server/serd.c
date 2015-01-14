@@ -40,6 +40,34 @@ LIST_HEAD(classhead);
 pthread_mutex_t totlock = PTHREAD_MUTEX_INITIALIZER;
 LIST_HEAD(tothead);
 
+void close_outfd(struct client_t *cli)
+{
+	close(cli->outfd);
+	fclose(cli->outfile);
+	cli->outfd = -1;
+	cli->outfile = NULL;
+}
+
+int open_outfd(struct client_t *cli)
+{
+	char path[PATH_MAX];
+	snprintf(path, PATH_MAX, "/tmp/%s_%s_%s",
+		cli->class->cliclass,
+		inet_ntoa(cli->cliaddr.sin_addr),
+		getmacstr(cli->mac));
+
+	cli->outfile = fopen(path, "a+");
+	fflush(cli->outfile);
+	if(!cli->outfile) {
+		sys_err("Open %s failed: %s(%d)\n", 
+			path, strerror(errno), errno);
+		cli->outfd = -1;
+		return 0;
+	}
+	cli->outfd = fileno(cli->outfile);
+	return 1;
+}
+
 static void getclass(struct cliclass_t *class)
 {
 	class->count++;
@@ -89,25 +117,6 @@ static struct cliclass_t *newclass(char *classname)
 	return new;
 }
 
-static void open_outfd(struct client_t *cli)
-{
-	char path[PATH_MAX];
-	snprintf(path, PATH_MAX, "/tmp/%s_%s_%s",
-		cli->class->cliclass,
-		inet_ntoa(cli->cliaddr.sin_addr),
-		getmacstr(cli->mac));
-
-	cli->outfile = fopen(path, "a+");
-	fflush(cli->outfile);
-	if(!cli->outfile) {
-		sys_err("Open %s failed: %s(%d)\n", 
-			path, strerror(errno), errno);
-		cli->outfd = -1;
-		return;
-	}
-	cli->outfd = fileno(cli->outfile);
-}
-
 static void accept_newcli(int sock)
 {
 	struct client_t *new;
@@ -136,7 +145,7 @@ static void accept_newcli(int sock)
 		goto clean4;
 	new->class = class;
 	memcpy(new->mac, reg.mac, ETH_ALEN);
-	open_outfd(new);
+	pthread_mutex_init(&new->lock, NULL);
 
 	pthread_mutex_lock(&class->lock);
 	pthread_mutex_lock(&totlock);
@@ -229,8 +238,7 @@ void cli_free(struct client_t *cli)
 	ssltcp_shutdown(cli->ssl);
 	ssltcp_free(cli->ssl);
 	close(cli->sock);
-	close(cli->outfd);
-	fclose(cli->outfile);
+	pthread_mutex_destroy(&cli->lock);
 	free(cli);
 }
 
