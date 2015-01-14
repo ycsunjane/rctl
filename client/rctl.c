@@ -131,6 +131,7 @@ static int r_connect()
 			sys_debug("connect failed\n");
 		}
 	}
+	close(fd);
 	return -1;
 }
 
