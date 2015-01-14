@@ -22,11 +22,28 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include "serd.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
+ 
+static struct termios tin;
+ 
+static void terminal_set(void) {
+    tcgetattr(STDIN_FILENO, &tin);
+     
+    static struct termios tlocal;
+    memcpy(&tlocal, &tin, sizeof(tin));
+    cfmakeraw(&tlocal);
+    tcsetattr(STDIN_FILENO,TCSANOW,&tlocal);
+}
+ 
+static void terminal_reset(void) {
+    tcsetattr(STDIN_FILENO,TCSANOW,&tin);
+}
 
 int bashfd(in_addr_t addr)
 {
@@ -92,6 +109,7 @@ void bashto(in_addr_t addr, SSL *oldssl)
 		close(fd);
 		return;
 	}
+	terminal_set();
 
 	fd_set rset, bset;
 	FD_ZERO(&rset);
@@ -149,7 +167,8 @@ void cmd_bashto()
 		if(memcmp(mac, cli->mac, ETH_ALEN))
 			continue;
 		pthread_mutex_unlock(&totlock);
-		bashto(cli->cliaddr.sin_addr.s_addr, cli->ssl);		
+		bashto(cli->cliaddr.sin_addr.s_addr, cli->ssl);
+		terminal_reset();
 		return;
 	}
 

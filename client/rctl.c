@@ -43,6 +43,7 @@
 #include "ssltcp.h"
 #include "log.h"
 #include "config.h"
+#include "exchange.h"
 
 static char cmd[CMDLEN];
 static char buf[BUFLEN];
@@ -168,16 +169,6 @@ static char *pty_init(int *pptm)
 	return name;
 }
 
-static void term(int signum)
-{
-	sys_debug("SIGCHLD received\n");
-	int status;
-	pid_t pid = waitpid((pid_t)-1, &status, WNOHANG);
-	sys_debug("child process %ld exited: %d\n",
-		(long) pid, WEXITSTATUS(status));
-	exit(0);
-}
-
 int bashfd()
 {
 	int fd = Socket(AF_INET, SOCK_STREAM, 0);
@@ -193,23 +184,6 @@ int bashfd()
 	} else {
 		sys_debug("connect failed\n");
 		return -1;
-	}
-}
-
-static void setnoecho(int fd)
-{
-	struct termios attr;
-	if(tcgetattr(fd, &attr) < 0) {
-		sys_err("tcgetattr failed: %s(%d)\n", 
-			strerror(errno), errno);
-		exit(-1);
-	}
-
-	attr.c_lflag &= ~ECHO;
-	if(tcsetattr(fd, TCSANOW, &attr) < 0) {
-		sys_err("tcsetattr failed: %s(%d)\n",
-			strerror(errno), errno);
-		exit(-1);
 	}
 }
 
@@ -259,7 +233,6 @@ static void bashfrom()
 				ptsname, strerror(errno), errno);
 			exit(-1);
 		}
-		setnoecho(pts);
 
 		dup2(pts, 0);
 		dup2(pts, 1);
@@ -270,61 +243,8 @@ static void bashfrom()
 			exit(-1);
 		}
 	} else {
-		/* SIGCHLD check bash exit */
-		struct sigaction act;
-		memset(&act, 0, sizeof(act));
-		act.sa_handler = term;
-		sigaction(SIGCHLD, &act, NULL);
-
-		/* parent */
-		int maxfd = (ptm > fd) ? (ptm + 1) : (fd + 1);
-		fd_set fset, bset;
-		FD_ZERO(&fset);
-		FD_SET(fd, &fset);
-		FD_SET(ptm, &fset);
-		bset = fset;
-
-		int count;
-		ssize_t nrcv;
-		while(1) {
-			fset = bset;
-			count = Select(maxfd, &fset, NULL, NULL, NULL);
-			if(count < 0) {
-				sys_err("Select failed: %s(%d)\n",
-					strerror(errno), errno);
-				exit(-1);
-			}
-
-			if(FD_ISSET(fd, &fset)) {
-				nrcv = ssltcp_read(ssl, buf, BUFLEN);
-				if(nrcv < 0) {
-					sys_debug("Connection closed: %s(%d)",
-						strerror(errno), errno);
-					exit(-1);
-				}
-
-				if(write(ptm, buf, nrcv) < 0) {
-					sys_debug("pty closed: %s(%d)",
-						strerror(errno), errno);
-					exit(-1);
-				}
-			}
-
-			if(FD_ISSET(ptm, &fset)) {
-				nrcv = read(ptm, buf, BUFLEN);
-				if(nrcv <= 0) {
-					sys_debug("pty closed: %s(%d)",
-						strerror(errno), errno);
-					exit(-1);
-				}
-
-				if(ssltcp_write(ssl, buf, nrcv) < 0) {
-					sys_debug("Connection closed: %s(%d)",
-						strerror(errno), errno);
-					exit(-1);
-				}
-			}
-		}
+		exchange(ptm, fd, ssl);
+		exit(0);
 	}
 }
 
