@@ -1,0 +1,40 @@
+# 简介
+
+rctl 用于远程管理海量linux设备。目前功能:
+1、证书认证ssl加密数据传输
+2、按类管理linux设备，发送命令
+3、/tmp 日志记录，每台设备一个log文件
+4、支持远程shell登录
+5、由客户端发起链接，解决路由问题
+
+## 使用
+
+### 证书系统
+
+### 命令
+
+server:
+
+	[jianxi@jianxi rctl]$ ./server/rctlser 
+	1: list all class
+	2: list all client
+	3: send command to all client
+	4: connect bash to client
+
+client:
+	
+	[jianxi@jianxi rctl]$ ./client/rctlcli 
+	(10975) rctl.c +105 r_connect(): DEBUG: Trying 1 ......
+	(10975) rctl.c +57 r_server(): DEBUG: Try connect: 127.0.0.1
+	(10975) rctl.c +125 r_connect(): DEBUG: Try 127.0.0.1 port: 7000
+	(10975) rctl.c +132 r_connect(): DEBUG: connect failed
+	Can not get: rctl.shanliren.net
+	(10975) rctl.c +57 r_server(): DEBUG: Try connect: shanliren.net
+	(10975) rctl.c +125 r_connect(): DEBUG: Try 123.254.109.239 port: 7000
+	(10975) rctl.c +129 r_connect(): DEBUG: connect success
+	
+### 待完成
+
+* readline bash风格接口
+* 配置文件
+* 链表基本结构优化
