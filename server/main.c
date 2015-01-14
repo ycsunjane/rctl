@@ -128,7 +128,7 @@ void cmd_sendcmd()
 int command()
 {
 	while(1) {
-		printf("1: list all class\n");
+		printf("\n1: list all class\n");
 		printf("2: list all client\n");
 		printf("3: send command to all client\n");
 		printf("4: connect bash to client\n");

@@ -164,11 +164,11 @@ repeat:
 			sys_debug("remote ssl closed\n");
 			return -1;
 		}
-		sys_err("SSL_read failed: %d\n", ret);
+		sys_debug("SSL_read failed: %d\n", ret);
 		return -1;
 	} else if(ret == 0) {
 		ret = ERR_get_error();
-		sys_err("SSL_connect failed: %s(%d)\n", 
+		sys_debug("SSL_connect failed: %s(%d)\n", 
 			ERR_error_string(ret, NULL), ret);
 		return -1;
 	}
@@ -189,11 +189,11 @@ repeat:
 			sys_debug("remote ssl closed\n");
 			return -1;
 		}
-		sys_err("SSL_write failed: %d\n", ret);
+		sys_debug("SSL_write failed: %d\n", ret);
 		return -1;
 	} else if(ret == 0) {
 		ret = ERR_get_error();
-		sys_err("SSL_connect failed: %s(%d)\n", 
+		sys_debug("SSL_connect failed: %s(%d)\n", 
 			ERR_error_string(ret, NULL), ret);
 		return -1;
 	}

@@ -26,6 +26,7 @@
 #include <sys/select.h>
 #include <termios.h>
 #include <signal.h>
+#include <sys/prctl.h>
 #include <sys/file.h>
 /* netdevice */
 #include <sys/ioctl.h>
@@ -187,6 +188,30 @@ int bashfd()
 	}
 }
 
+static int bashpid;
+static void term(int signum)
+{
+	kill(bashpid, SIGKILL);
+	exit(0);
+}
+
+static void init_signal()
+{
+	struct sigaction act;
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = term;
+	sigaction(SIGTERM, &act, NULL);
+	sigaction(SIGINT, &act, NULL); 
+	sigaction(SIGKILL, &act, NULL); 
+	sigaction(SIGHUP, &act, NULL); 
+}
+
+static void killme()
+{
+	prctl(PR_SET_PDEATHSIG, SIGHUP);
+	init_signal();
+}
+
 static void bashfrom()
 {
 	pid_t pid;
@@ -216,11 +241,11 @@ static void bashfrom()
 		return;
 	}
 
-	if( (pid = fork()) < 0) {
+	if( (bashpid = fork()) < 0) {
 		sys_err("Fork failed: %s(%d)\n", 
 			strerror(errno), errno);
 		exit(-1);
-	} else if(pid == 0) {
+	} else if(bashpid == 0) {
 		if(setsid() < 0) {
 			sys_err("set new session id failed: %s(%d)\n",
 				strerror(errno), errno);
@@ -243,6 +268,7 @@ static void bashfrom()
 			exit(-1);
 		}
 	} else {
+		killme();
 		exchange(ptm, fd, ssl);
 		exit(0);
 	}
@@ -276,20 +302,14 @@ static void getmac(unsigned char *dmac, char *nic)
 
 static void one_instance()
 {
-	int pid_file = open("/tmp/rctlcli.pid", 
+	int pid_file = open("/var/run/rctlcli.pid", 
 		O_CREAT | O_RDWR, 0666);
-	if(pid_file < 0) {
-		sys_err("open failed: %s(%d)\n", strerror(errno), errno);
-		exit(-1);
-	}
 	int rc = flock(pid_file, LOCK_EX | LOCK_NB);
 	if(rc) {
 		if(EWOULDBLOCK == errno) {
 			sys_err("another rctlcli is running\n");
 			exit(0);
 		}
-		sys_err("flock failed: %s(%d)\n", strerror(errno), errno);
-		exit(-1);
 	}
 }
 
