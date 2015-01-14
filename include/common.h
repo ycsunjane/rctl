@@ -37,4 +37,5 @@ int Pthread_create(void *(*start_routine) (void *), void *arg);
 int Setsockopt(int socket, int level, int option_name,
 	const void *option_value, socklen_t option_len);
 ssize_t Recv(int socket, void *buffer, size_t length, int flags);
+char *getmacstr(unsigned char *mac);
 #endif /* __LNET_H__ */

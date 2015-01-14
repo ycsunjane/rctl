@@ -92,9 +92,10 @@ static struct cliclass_t *newclass(char *classname)
 static void open_outfd(struct client_t *cli)
 {
 	char path[PATH_MAX];
-	snprintf(path, PATH_MAX, "/tmp/%s_%s",
+	snprintf(path, PATH_MAX, "/tmp/%s_%s_%s",
 		cli->class->cliclass,
-		inet_ntoa(cli->cliaddr.sin_addr));
+		inet_ntoa(cli->cliaddr.sin_addr),
+		getmacstr(cli->mac));
 
 	cli->outfile = fopen(path, "a+");
 	fflush(cli->outfile);
@@ -134,8 +135,8 @@ static void accept_newcli(int sock)
 	if(!(class = newclass(classname))) 
 		goto clean4;
 	new->class = class;
-	open_outfd(new);
 	memcpy(new->mac, reg.mac, ETH_ALEN);
+	open_outfd(new);
 
 	pthread_mutex_lock(&class->lock);
 	pthread_mutex_lock(&totlock);
