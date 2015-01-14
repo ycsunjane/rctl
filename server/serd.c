@@ -51,10 +51,13 @@ void close_outfd(struct client_t *cli)
 int open_outfd(struct client_t *cli)
 {
 	char path[PATH_MAX];
+	char *macstr = getmacstr(cli->mac);
 	snprintf(path, PATH_MAX, "/tmp/%s_%s_%s",
 		cli->class->cliclass,
 		inet_ntoa(cli->cliaddr.sin_addr),
-		getmacstr(cli->mac));
+		macstr);
+	if(macstr)
+		free(macstr);
 
 	cli->outfile = fopen(path, "a+");
 	fflush(cli->outfile);
