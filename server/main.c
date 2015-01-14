@@ -149,6 +149,7 @@ int command()
 			cmd_bashto();
 			break;
 		}
+		fllush_stdin();
 	}
 }
 

@@ -5,7 +5,7 @@ all: rctlser rctlcli
 CC?=gcc
 CFLAGS?=-Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable -Wno-unused-but-set-variable
 CFLAGS+=-I. -I$(TOPDIR)/include
-CFLAGS+=-g -DDEBUG
+# CFLAGS+=-g -DDEBUG
 CFLAGS+=-D_GNU_SOURCE
 LDFLAGS+=-lpthread -lssl -lcrypto -lreadline -lncurses
 STRIP=strip
